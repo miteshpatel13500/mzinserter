@@ -2,7 +2,17 @@ import React, { useState, useEffect } from "react";
 import { PDFDocument } from "pdf-lib";
 import { saveAs } from "file-saver";
 
-export default function PDFInserter() {
+const ALLOWED_USERS = [
+  { email: "miteshpatel13500@gmail.com", password: "M1i2t3e4s5h6@1810" },
+  { email: "Oracleimageservices@gmail.com", password: "Sm@1008" },
+];
+
+export default function PDFInserterProtected() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
   const [mainFiles, setMainFiles] = useState([]);
   const [insertFile, setInsertFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -25,6 +35,36 @@ export default function PDFInserter() {
     };
     loadDefaultInsert();
   }, []);
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+
+
+    const user = ALLOWED_USERS.find(
+      (u) => u.email === email && u.password === password
+    );
+
+    if (user) {
+      setAuthenticated(true);
+      setError("");
+      localStorage.setItem("pdf_inserter_login", "true");
+    } else {
+      setError("Invalid email or password!");
+    }
+  };
+
+  useEffect(() => {
+    if (localStorage.getItem("pdf_inserter_login") === "true") {
+      setAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("pdf_inserter_login");
+    setAuthenticated(false);
+    setEmail("");
+    setPassword("");
+  };
 
   const handleMainFilesChange = (e) => {
     setMainFiles(Array.from(e.target.files));
@@ -63,18 +103,13 @@ export default function PDFInserter() {
         for (let i = 0; i < totalPages; i++) {
           const [mainPage] = await outputPdf.copyPages(mainPdf, [i]);
           outputPdf.addPage(mainPage);
-
           const [insertPage] = await outputPdf.copyPages(insertPdf, [0]);
-
-          // Match size + scale proportionally
           const { width, height } = mainPage.getSize();
           const scaleX = width / insertPage.getWidth();
           const scaleY = height / insertPage.getHeight();
           const scale = Math.min(scaleX, scaleY);
-
           insertPage.setSize(width, height);
           insertPage.scale(scale, scale);
-
           outputPdf.addPage(insertPage);
         }
 
@@ -92,61 +127,93 @@ export default function PDFInserter() {
     }
   };
 
+  // 🔐 If not logged in — show login page
+  if (!authenticated) {
+    return (
+      <div style={styles.loginContainer}>
+        <form onSubmit={handleLogin} style={styles.loginCard}>
+          <h2 style={styles.title}>🔒 Secure Access</h2>
+          <p style={styles.subtitle}>Enter your credentials to continue</p>
+
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={styles.input}
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={styles.input}
+            required
+          />
+
+          {error && <p style={styles.error}>{error}</p>}
+
+          <button type="submit" style={styles.button}>Login</button>
+        </form>
+      </div>
+    );
+  }
+
+  // 🧩 Main app (same as before)
   return (
     <div style={styles.container}>
       <div style={styles.card}>
+        <div style={{ textAlign: "right", marginBottom: 10 }}>
+          <button onClick={handleLogout} style={styles.logoutBtn}>Logout</button>
+        </div>
+
         <h2 style={styles.title}>✨ PDF Page Inserter</h2>
         <p style={styles.subtitle}>
           Insert a default page after every page of your uploaded PDFs.
         </p>
 
-       <div
-  style={styles.dropZone}
-  onDrop={(e) => {
-    e.preventDefault();
-    setMainFiles(Array.from(e.dataTransfer.files));
-  }}
-  onDragOver={(e) => e.preventDefault()}
->
-  <label htmlFor="pdf-upload" style={styles.dropZoneLabel}>
-    <div style={styles.iconWrapper}>
-      📂
-    </div>
-    <div>
-      <p style={styles.dropText}>Drag & drop your PDFs here</p>
-      <p style={styles.orText}>or click to select files</p>
-    </div>
-  </label>
-  <input
-    id="pdf-upload"
-    type="file"
-    multiple
-    accept="application/pdf"
-    onChange={handleMainFilesChange}
-    style={{ display: "none" }}
-  />
-</div>
-
-{/* File list preview */}
-{mainFiles.length > 0 && (
-  <div style={styles.fileList}>
-    {mainFiles.map((file, index) => (
-      <div key={index} style={styles.fileItem}>
-        <span style={styles.fileIcon}>📄</span>
-        <span style={styles.fileName}>{file.name}</span>
-        <button
-          onClick={() =>
-            setMainFiles(mainFiles.filter((_, i) => i !== index))
-          }
-          style={styles.removeBtn}
+        <div
+          style={styles.dropZone}
+          onDrop={(e) => {
+            e.preventDefault();
+            setMainFiles(Array.from(e.dataTransfer.files));
+          }}
+          onDragOver={(e) => e.preventDefault()}
         >
-          ✕
-        </button>
-      </div>
-    ))}
-  </div>
-)}
+          <label htmlFor="pdf-upload" style={styles.dropZoneLabel}>
+            <div style={styles.iconWrapper}>📂</div>
+            <div>
+              <p style={styles.dropText}>Drag & drop your PDFs here</p>
+              <p style={styles.orText}>or click to select files</p>
+            </div>
+          </label>
+          <input
+            id="pdf-upload"
+            type="file"
+            multiple
+            accept="application/pdf"
+            onChange={handleMainFilesChange}
+            style={{ display: "none" }}
+          />
+        </div>
 
+        {mainFiles.length > 0 && (
+          <div style={styles.fileList}>
+            {mainFiles.map((file, index) => (
+              <div key={index} style={styles.fileItem}>
+                <span style={styles.fileIcon}>📄</span>
+                <span style={styles.fileName}>{file.name}</span>
+                <button
+                  onClick={() => setMainFiles(mainFiles.filter((_, i) => i !== index))}
+                  style={styles.removeBtn}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <button
           onClick={processAll}
@@ -178,12 +245,7 @@ export default function PDFInserter() {
 
             {loading && (
               <div style={styles.progressBarOuter}>
-                <div
-                  style={{
-                    ...styles.progressBarInner,
-                    width: `${progress}%`,
-                  }}
-                />
+                <div style={{ ...styles.progressBarInner, width: `${progress}%` }} />
               </div>
             )}
           </div>
@@ -193,8 +255,46 @@ export default function PDFInserter() {
   );
 }
 
-// 🌈 Beautiful inline styles
 const styles = {
+  // login page styles
+  loginContainer: {
+    background: "linear-gradient(135deg, #c3f0ff, #b3e5fc)",
+    height: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontFamily: "'Inter', sans-serif",
+  },
+  loginCard: {
+    background: "#fff",
+    padding: "40px 30px",
+    borderRadius: 16,
+    boxShadow: "0 8px 25px rgba(0,0,0,0.1)",
+    width: "90%",
+    maxWidth: 380,
+    textAlign: "center",
+  },
+  input: {
+    width: "95%",
+    padding: "10px 12px",
+    marginBottom: 12,
+    borderRadius: 8,
+    border: "1px solid #ccc",
+    fontSize: 15,
+  },
+  error: {
+    color: "#dc3545",
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  logoutBtn: {
+    background: "transparent",
+    border: "none",
+    color: "#007bff",
+    cursor: "pointer",
+    fontSize: 14,
+    textDecoration: "underline",
+  },
   container: {
     background: "linear-gradient(135deg, #e0f7fa, #e3f2fd)",
     minHeight: "100vh",
@@ -251,7 +351,7 @@ const styles = {
     padding: "12px 0",
     border: "none",
     borderRadius: 10,
-    color: "#fff",
+    color: "#000",
     fontSize: 16,
     fontWeight: 600,
     cursor: "pointer",
