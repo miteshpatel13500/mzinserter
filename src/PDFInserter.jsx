@@ -72,60 +72,77 @@ export default function PDFInserterProtected() {
     setProgress(0);
   };
 
-  const processAll = async () => {
-    if (!insertFile) {
-      setStatus("⚠️ Insert PDF missing — please check /public/insert.pdf");
-      return;
-    }
-    if (mainFiles.length === 0) {
-      setStatus("⚠️ Please select at least one main PDF.");
-      return;
-    }
+const processAll = async () => {
+  if (!insertFile) {
+    setStatus("⚠️ Insert PDF missing — please check /public/insert.pdf");
+    return;
+  }
+  if (mainFiles.length === 0) {
+    setStatus("⚠️ Please select at least one main PDF.");
+    return;
+  }
 
-    setLoading(true);
-    setProgress(0);
-    setStatus("🔄 Preparing to merge...");
+  setLoading(true);
+  setProgress(0);
+  setStatus("🔄 Preparing to merge...");
 
-    try {
-      const insertPdfBytes = await insertFile.arrayBuffer();
-      const insertPdf = await PDFDocument.load(insertPdfBytes);
+  try {
+    const insertPdfBytes = await insertFile.arrayBuffer();
+    const insertPdf = await PDFDocument.load(insertPdfBytes);
 
-      for (let idx = 0; idx < mainFiles.length; idx++) {
-        const mainFile = mainFiles[idx];
-        setStatus(`📘 Processing ${idx + 1} of ${mainFiles.length}: ${mainFile.name}`);
-        setProgress(((idx / mainFiles.length) * 100).toFixed(0));
+    for (let idx = 0; idx < mainFiles.length; idx++) {
+      const mainFile = mainFiles[idx];
+      setStatus(`📘 Processing ${idx + 1} of ${mainFiles.length}: ${mainFile.name}`);
 
-        const mainPdfBytes = await mainFile.arrayBuffer();
-        const mainPdf = await PDFDocument.load(mainPdfBytes);
-        const outputPdf = await PDFDocument.create();
-        const totalPages = mainPdf.getPageCount();
+      const mainPdfBytes = await mainFile.arrayBuffer();
+      const mainPdf = await PDFDocument.load(mainPdfBytes);
 
-        for (let i = 0; i < totalPages; i++) {
-          const [mainPage] = await outputPdf.copyPages(mainPdf, [i]);
+      const outputPdf = await PDFDocument.create();
+      const totalPages = mainPdf.getPageCount();
+      const CHUNK_SIZE = 50; // ✅ safe for 600+ pages
+
+      for (let start = 0; start < totalPages; start += CHUNK_SIZE) {
+        const end = Math.min(start + CHUNK_SIZE, totalPages);
+        const pageIndexes = Array.from({ length: end - start }, (_, i) => start + i);
+
+        // ⚡ Copy chunk of main pages at once
+        const mainPages = await outputPdf.copyPages(mainPdf, pageIndexes);
+
+        for (let i = 0; i < mainPages.length; i++) {
+          const mainPage = mainPages[i];
           outputPdf.addPage(mainPage);
+
+          // Copy insert page for each main page
           const [insertPage] = await outputPdf.copyPages(insertPdf, [0]);
           const { width, height } = mainPage.getSize();
-          const scaleX = width / insertPage.getWidth();
-          const scaleY = height / insertPage.getHeight();
-          const scale = Math.min(scaleX, scaleY);
           insertPage.setSize(width, height);
-          insertPage.scale(scale, scale);
           outputPdf.addPage(insertPage);
         }
 
-        const pdfBytes = await outputPdf.save();
-        saveAs(new Blob([pdfBytes]), `merged-${mainFile.name}`);
+        // 💤 Small pause every chunk to free memory
+        await new Promise((r) => setTimeout(r, 30));
+
+        // Update progress
+        const progressPercent = Math.min(((end / totalPages) * 100).toFixed(0), 100);
+        setProgress(progressPercent);
+        setStatus(`📄 Merging pages ${start + 1}–${end} of ${totalPages}`);
       }
 
-      setProgress(100);
-      setStatus("✅ All PDFs processed successfully!");
-    } catch (err) {
-      console.error(err);
-      setStatus("❌ Error while processing. Please check console logs.");
-    } finally {
-      setLoading(false);
+      // 🧾 Save only once after all chunks are processed
+      const pdfBytes = await outputPdf.save();
+      saveAs(new Blob([pdfBytes]), `merged-${mainFile.name}`);
     }
-  };
+
+    setProgress(100);
+    setStatus("✅ All PDFs merged successfully!");
+  } catch (err) {
+    console.error("❌ Error while processing:", err);
+    setStatus("❌ Error during merging. Check console for details.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // 🔐 If not logged in — show login page
   if (!authenticated) {
